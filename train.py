@@ -135,9 +135,9 @@ class model_train():
 
                     logging.info("# get hypotheses")
                     hypotheses = get_hypotheses(num_eval_batches, num_eval_samples, sess, y_hat, self.model.index_char)
-
+                    print('====',hypotheses)
                     logging.info("# write results")
-                    model_output = "data/iwslt2016_E%02dL%.2f" % (epoch, _loss)
+                    model_output = "iwslt2016_E%02dL%.2f" % (epoch, _loss)
                     if not os.path.exists('data/eval/1'):
                         os.makedirs('data/eval/1')
                     translation = os.path.join('data/eval/1', model_output)

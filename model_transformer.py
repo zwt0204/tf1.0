@@ -343,32 +343,35 @@ class Model_Transformer():
 
         return y_hat, summaries
 
-    def predict(self, xs):
+    def predict(self, xs, ys):
+        decoder_inputs, y, y_seqlen, sents2 = ys
 
         decoder_inputs = tf.ones((tf.shape(xs[0])[0], 1), tf.int32) * self.char_index["<s>"]
+        ys = (decoder_inputs, y, y_seqlen, sents2)
+
         memory, sents1, src_masks = self.encoder(xs, False)
 
         logging.info("Inference graph is being built. Please be patient.")
         for _ in tqdm(range(self.sequence_length)):
-            logits, y_hat, y, sents2 = self.decode(xs, memory, src_masks, False)
+            logits, y_hat, y, sents2 = self.decode(ys, memory, src_masks, False)
             if tf.reduce_sum(y_hat, 1) == self.char_index["<pad>"]:
                 break
 
             _decoder_inputs = tf.concat((decoder_inputs, y_hat), 1)
+            ys = (_decoder_inputs, y, y_seqlen, sents2)
 
         # monitor a random sample
         n = tf.random_uniform((), 0, tf.shape(y_hat)[0] - 1, tf.int32)
         sent1 = sents1[n]
         pred = convert_idx_to_token_tensor(y_hat[n], self.index_char)
-        # sent2 = sents2[n]
+        sent2 = sents2[n]
 
         tf.summary.text("sent1", sent1)
         tf.summary.text("pred", pred)
-        # tf.summary.text("sent2", sent2)
+        tf.summary.text("sent2", sent2)
         summaries = tf.summary.merge_all()
-        print('======', pred)
 
-        return pred, y_hat, summaries
+        return y_hat, summaries
 
     def label_smoothing(self, inputs, epsilon=0.1):
         V = inputs.get_shape().as_list()[-1]  # number of channels
