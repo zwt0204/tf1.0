@@ -15,8 +15,8 @@ from utils import save_variable_specs, calc_bleu, get_hypotheses, get_batch
 import math
 from tqdm import tqdm
 
-# 禁止GPU
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# GPU设置
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,17 +26,17 @@ class model_train():
     def __init__(self):
         self.class_graph = tf.Graph()
         self.model_dir = "models/Transformer"
-        self.batch_size = 64
-        self.d_model = 2
-        self.num_blocks = 1
-        self.num_heads = 2
-        self.sequence_length = 40
+        self.batch_size = 128
+        self.d_model = 256
+        self.num_blocks = 3
+        self.num_heads = 8
+        self.sequence_length = 100
         self.dropout_rate = 0.3
         self.smoothing = 0.1
         self.warmup_steps = 400
-        self.d_ff = 2
+        self.d_ff = 1024
         self.lr = 0.00001
-        self.vocab_file = 'data\iwslt2016\segmented\\bpe.vocab'
+        self.vocab_file = 'data/iwslt2016/segmented/bpe.vocab'
         self.model = Model_Transformer(self.batch_size, self.d_model, self.num_blocks, self.num_heads,
                                        self.sequence_length
                                        , self.dropout_rate, self.smoothing, self.warmup_steps, self.vocab_file,
@@ -138,9 +138,9 @@ class model_train():
 
                     logging.info("# write results")
                     model_output = "data/iwslt2016_E%02dL%.2f" % (epoch, _loss)
-                    if not os.path.exists('data/iwslt2016/segmented/eval.de.bpe'):
-                        os.makedirs('data/iwslt2016/segmented/eval.de.bpe')
-                    translation = os.path.join('data/iwslt2016/segmented/eval.de.bpe', model_output)
+                    if not os.path.exists('data/eval/1'):
+                        os.makedirs('data/eval/1')
+                    translation = os.path.join('data/eval/1', model_output)
                     with open(translation, 'w') as fout:
                         fout.write("\n".join(hypotheses))
 
@@ -156,7 +156,7 @@ class model_train():
 
 
 def generator_fn(sents1, sents2):
-    token2idx, _ = load_vocab('D:\mygit\\tf1.0\data\iwslt2016\segmented\\bpe.vocab')
+    token2idx, _ = load_vocab('data/iwslt2016/segmented/bpe.vocab')
     for sent1, sent2 in zip(sents1, sents2):
         x = encode(sent1, "x", token2idx)
         y = encode(sent2, "y", token2idx)

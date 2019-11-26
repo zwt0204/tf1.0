@@ -14,21 +14,19 @@ from utils import get_hypotheses
 class Model_Predict():
 
     def __init__(self, **kwargs):
-        # self.model_dir = "models/Transformer"
         self.model_dir = kwargs["model_dir"]
         self.graph = kwargs["graph"]
-        self.batch_size = 64
-        self.d_model = 64
-        self.num_blocks = 1
-        self.num_heads = 2
-        self.sequence_length = 40
+        self.batch_size = 128
+        self.d_model = 256
+        self.num_blocks = 3
+        self.num_heads = 8
+        self.sequence_length = 100
         self.dropout_rate = 0.3
         self.smoothing = 0.1
         self.warmup_steps = 400
-        self.d_ff = 16
+        self.d_ff = 1024
         self.lr = 0.00001
         self.vocab_file = kwargs["vocab_file"]
-        # self.vocab_file = 'data\iwslt2016\segmented\\bpe.vocab'
         self.model = Model_Transformer(self.batch_size, self.d_model, self.num_blocks, self.num_heads,
                                        self.sequence_length
                                        , self.dropout_rate, self.smoothing, self.warmup_steps, self.vocab_file,
@@ -108,3 +106,11 @@ class Model_Predict():
 
         x = [dict.get(t, dict["<unk>"]) for t in tokens]
         return x
+
+
+if __name__ == '__main__':
+    graph = tf.Graph()
+    model_dir = "models/Transformer"
+    vocab_file = 'data\iwslt2016\segmented\\bpe.vocab'
+    Predict_model = Model_Predict(model_dir=model_dir, graph=graph, vocab_file=vocab_file)
+    Predict_model.predict('Hello')
