@@ -2,6 +2,7 @@ import pickle
 import tensorflow as tf
 from bert_lstm_model import Model
 from al_bert import tokenization
+import numpy as np
 
 
 class bert_predict:
@@ -17,7 +18,6 @@ class bert_predict:
 
         self.graph = kwargs["graph"]
         with self.graph.as_default():
-            # with tf.variable_scope('bert_lstm_query'):
             self.model = Model(init_checkpoint_file=self.init_checkpoint, bert_config_dir=self.bert_config)
             self.saver = tf.train.Saver()
         config = tf.ConfigProto(log_device_placement=False)
@@ -26,7 +26,7 @@ class bert_predict:
 
     def convert_single_example(self, char_line, tag_to_id, max_seq_length, tokenizer, label_line):
         """
-        将一个样本进行分析，然后将字转化为id, 标签转化为lb
+        将一个样本进行分析，然后将字转化为id, 标签转化为id
         """
         text_list = char_line.split(' ')
         label_list = label_line.split(' ')
@@ -83,12 +83,11 @@ class bert_predict:
         labels = ' '.join(tags)
         labels = tokenization.convert_to_unicode(labels)
         ids, mask, segment_ids, label_ids = self.convert_single_example(char_line=text,
-                                                                   tag_to_id=tag_to_id,
-                                                                   max_seq_length=max_seq_length,
-                                                                   tokenizer=self.tokenizer,
-                                                                   label_line=labels)
-        import numpy as np
-        segment_ids = np.reshape(segment_ids,(1, max_seq_length))
+                                                                        tag_to_id=tag_to_id,
+                                                                        max_seq_length=max_seq_length,
+                                                                        tokenizer=self.tokenizer,
+                                                                        label_line=labels)
+        segment_ids = np.reshape(segment_ids, (1, max_seq_length))
         ids = np.reshape(ids, (1, max_seq_length))
         mask = np.reshape(mask, (1, max_seq_length))
         label_ids = np.reshape(label_ids, (1, max_seq_length))
@@ -104,7 +103,8 @@ class bert_predict:
     def predict(self, input_text):
         with open(self.map_file, "rb") as f:
             tag_to_id, id_to_tag = pickle.load(f)
-        result = self.model.evaluate_line(self.session, self.input_from_line(input_text, self.max_seq_len, tag_to_id), id_to_tag)
+        result = self.model.evaluate_line(self.session, self.input_from_line(input_text, self.max_seq_len, tag_to_id),
+                                          id_to_tag)
         data_items = {}
         if len(result['entities']) > 0:
             for i in range(len(result['entities'])):
