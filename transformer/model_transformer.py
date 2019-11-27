@@ -397,17 +397,18 @@ class Model_Transformer():
 
     def label_smoothing(self, inputs, epsilon=0.1):
         """
-        标签平滑
+        标签平滑归一化：相对于one-hot分了一点概率到其他的类别，让标签没有那么绝对化，留给学习一点泛化的空间
         :param inputs:
         :param epsilon:
         :return:
         """
-        V = inputs.get_shape().as_list()[-1]  # self.vocab_size
+        V = inputs.get_shape().as_list()[-1]  # 类别数
         return ((1 - epsilon) * inputs) + (epsilon / V)
 
     def noam_scheme(self, init_lr, global_step, warmup_steps=4000.):
         """
-        学习率预热
+        学习率预热：在训练的轮数达到warmup_steps过程中，学习率会逐渐增加到init_lr，
+        训练轮数超过warmup_steps之后学习率会从init_lr开始逐步下降。
         :param init_lr:
         :param global_step:
         :param warmup_steps:
