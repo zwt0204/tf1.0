@@ -43,7 +43,7 @@ class Model_Transformer():
         self.char_index, self.index_char = self.load_dict()
         # 词个数
         self.vocab_size = len(self.char_index)
-        # 词嵌入
+        # 词嵌入  shape=(self.vocab_size, self.d_model)
         self.embedding = self.get_token_embeddings()
         # hidden dimension of feedforward layer
         self.d_ff = d_ff
@@ -52,7 +52,7 @@ class Model_Transformer():
 
     def load_dict(self):
         """
-        返回词映射
+        返回词映射{word: word_index} and {word_index: wprd}
         :return:
         """
         vocab = [line.split()[0] for line in open(self.vocab_file, 'r', encoding='utf8').read().splitlines()]
@@ -67,11 +67,14 @@ class Model_Transformer():
         :return:
         """
         with tf.variable_scope("shared_weight_matrix"):
+            # tf.contrib.layers.xavier_initializer()：保持每一层的梯度大小都差不多相同
             embeddings = tf.get_variable('weight_mat',
                                          dtype=tf.float32,
                                          shape=(self.vocab_size, self.d_model),
                                          initializer=tf.contrib.layers.xavier_initializer())
             if zero_pad:
+                # tf.concat :向量的拼接
+                # 将vocabulary 中index=0的设置为 constant 0, 也就是作为 input 中的 zero padding 的词向量。
                 embeddings = tf.concat((tf.zeros(shape=[1, self.d_model]),
                                         embeddings[1:, :]), 0)
         return embeddings
@@ -87,11 +90,11 @@ class Model_Transformer():
             x, seqlens, sentsl = xs
             # tf.equal(A, B)是对比这两个矩阵或者向量的相等的元素，如果是相等的那就返回True，
             # 否则返回False，返回的值的矩阵维度和A是一样的
-            src_mask = tf.math.equal(x, 0)
+            src_mask = tf.math.equal(x, 0)  # [batch_size, embedding_size]
             # embedding
-            enc = tf.nn.embedding_lookup(self.embedding, x)  # (N, T1, d_model)
-            # 点积缩放因子
-            enc *= self.d_model ** 0.5  # scale
+            enc = tf.nn.embedding_lookup(self.embedding, x)  # [batch_size, length, embedding]
+            # 归一化，为什么？
+            enc *= self.d_model ** 0.5
             enc += self.positional_encoding(enc, self.sequence_length)
             enc = tf.layers.dropout(enc, self.dropout_rate, training=training)
             # Blocks
@@ -153,7 +156,7 @@ class Model_Transformer():
                     dec = self.ff(dec, num_units=[self.d_ff, self.d_model])
 
         # Final linear projection (embedding weights are shared)
-        weights = tf.transpose(self.embedding)  # (d_model, vocab_size)
+        weights = tf.transpose(self.embedding)  # (d_model, vocab_size) 转置
         logits = tf.einsum('ntd,dk->ntk', dec, weights)  # (N, T2, vocab_size)
         y_hat = tf.to_int32(tf.argmax(logits, axis=-1))
 
@@ -189,23 +192,22 @@ class Model_Transformer():
                             training=True,
                             causality=False,
                             scope="multihead_attention"):
-        d_model = queries.get_shape().as_list()[-1]
         with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
-            # Linear projections
-            Q = tf.layers.dense(queries, d_model, use_bias=True)  # (N, T_q, d_model)
-            K = tf.layers.dense(keys, d_model, use_bias=True)  # (N, T_k, d_model)
-            V = tf.layers.dense(values, d_model, use_bias=True)  # (N, T_k, d_model)
-            # Split and concat
-            Q_ = tf.concat(tf.split(Q, num_heads, axis=2), axis=0)  # (h*N, T_q, d_model/h)
-            K_ = tf.concat(tf.split(K, num_heads, axis=2), axis=0)  # (h*N, T_k, d_model/h)
-            V_ = tf.concat(tf.split(V, num_heads, axis=2), axis=0)  # (h*N, T_k, d_model/h)
+            # Linear projections  8个头同时计算
+            Q = tf.layers.dense(queries, self.d_model, use_bias=True)  # (N, T_q, d_model)
+            K = tf.layers.dense(keys, self.d_model, use_bias=True)  # (N, T_k, d_model)
+            V = tf.layers.dense(values, self.d_model, use_bias=True)  # (N, T_k, d_model)
+            # Split and concat  分裂成8个头
+            Q_ = tf.concat(tf.split(Q, self.num_heads, axis=2), axis=0)  # (h*N, T_q, d_model/h)
+            K_ = tf.concat(tf.split(K, self.num_heads, axis=2), axis=0)  # (h*N, T_k, d_model/h)
+            V_ = tf.concat(tf.split(V, self.num_heads, axis=2), axis=0)  # (h*N, T_k, d_model/h)
             # Attention
             outputs = self.scaled_dot_product_attention(Q_, K_, V_, key_masks, causality, dropout_rate, training)
-            # Restore shape
+            # Restore shape  将8个头的结构拼接，每个头的输出刚好是64维，拼接后又是512维
             outputs = tf.concat(tf.split(outputs, num_heads, axis=0), axis=2)  # (N, T_q, d_model)
-            # Residual connection
+            # 残差连接
             outputs += queries
-            # Normalize
+            # 层归一化
             outputs = self.ln(outputs)
 
         return outputs
@@ -233,7 +235,7 @@ class Model_Transformer():
         """
         with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
             inputs_shape = inputs.get_shape()
-            params_shape = inputs_shape[-1:]
+            params_shape = inputs_shape[-1:]  # self.d_model
             # tf.nn.moments()函数用于计算均值和方差
             mean, variance = tf.nn.moments(inputs, [-1], keep_dims=True)
             beta = tf.get_variable("beta", params_shape, initializer=tf.zeros_initializer())
@@ -250,13 +252,13 @@ class Model_Transformer():
         with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
             d_k = Q.get_shape().as_list()[-1]
 
-            # dot product
+            # dot product 计算score
             outputs = tf.matmul(Q, tf.transpose(K, [0, 2, 1]))  # (N, T_q, T_k)
-            # scale
+            # scale divide by d_k开根号
             outputs /= d_k ** 0.5
             # key masking
             outputs = self.mask(outputs, key_masks=key_masks, type="key")
-            # causality or future blinding masking
+            # 如果为true的话，那么就是将这个东西未来的units给屏蔽了
             if causality:
                 outputs = self.mask(outputs, type="future")
             # softmax
@@ -271,18 +273,35 @@ class Model_Transformer():
         return outputs
 
     def mask(self, inputs, key_masks=None, type=None):
+        """
+        inputs: 3d tensor. (N, T_q, T_k)
+        keys: 3d tensor. (N, T_k, d)
+        :param inputs:
+        :param key_masks:
+        :param type:
+        :return:
+        """
+        # 填充的负数
         padding_num = -2 ** 32 + 1
         if type in ("k", "key", "keys"):
+            # 张量转换为 float32 类型, 将true/false转化为1/0
             key_masks = tf.to_float(key_masks)
             key_masks = tf.tile(key_masks, [tf.shape(inputs)[0] // tf.shape(key_masks)[0], 1])  # (h*N, seqlen)
             key_masks = tf.expand_dims(key_masks, 1)  # (h*N, 1, seqlen)
             outputs = inputs + key_masks * padding_num
         elif type in ("f", "future", "right"):
             diag_vals = tf.ones_like(inputs[0, :, :])  # (T_q, T_k)
+            # 转化为下三角矩阵，上三角全为0
             tril = tf.linalg.LinearOperatorLowerTriangular(diag_vals).to_dense()  # (T_q, T_k)
+            # 在dim=0 添加一维
+            # tf.tile（A， B）将A与B对应的维度扩大响应倍数
             future_masks = tf.tile(tf.expand_dims(tril, 0), [tf.shape(inputs)[0], 1, 1])  # (N, T_q, T_k)
-
+            # 得到下三角为负数，上三角为0的下三角矩阵
             paddings = tf.ones_like(future_masks) * padding_num
+            # tf.equal对应位置相同返回True，否则返回False
+            # where(condition, x=None, y=None, name=None)的用法
+            # condition， x, y 相同维度，condition是bool型值，True/False
+            # 返回值是对应元素，condition中元素为True的元素替换为x中的元素，为False的元素替换为y中对应元素
             outputs = tf.where(tf.equal(future_masks, 0), paddings, inputs)
         else:
             print("Check if you entered type correctly!")
@@ -291,8 +310,9 @@ class Model_Transformer():
 
     def train(self, xs, ys):
         # forward
+
         memory, sents1, src_masks = self.encoder(xs)
-        logits, preds, y, sents2 = self.decode(ys, memory, src_masks)
+        logits, _, y, _ = self.decode(ys, memory, src_masks)
 
         # train scheme
         y_ = self.label_smoothing(tf.one_hot(y, depth=self.vocab_size))
@@ -300,6 +320,8 @@ class Model_Transformer():
         nonpadding = tf.to_float(tf.not_equal(y, self.char_index["<pad>"]))  # 0: <pad>
         loss = tf.reduce_sum(ce * nonpadding) / (tf.reduce_sum(nonpadding) + 1e-7)
 
+        # global_step在滑动平均、优化器、指数衰减学习率等方面都有用到,
+        # 代表全局步数，比如在多少步该进行什么操作，现在神经网络训练到多少轮等等，类似于一个钟表
         global_step = tf.train.get_or_create_global_step()
         lr = self.noam_scheme(self.lr, global_step, self.warmup_steps)
         optimizer = tf.train.AdamOptimizer(lr)
@@ -374,9 +396,23 @@ class Model_Transformer():
         return y_hat, summaries
 
     def label_smoothing(self, inputs, epsilon=0.1):
-        V = inputs.get_shape().as_list()[-1]  # number of channels
+        """
+        标签平滑
+        :param inputs:
+        :param epsilon:
+        :return:
+        """
+        V = inputs.get_shape().as_list()[-1]  # self.vocab_size
         return ((1 - epsilon) * inputs) + (epsilon / V)
 
     def noam_scheme(self, init_lr, global_step, warmup_steps=4000.):
+        """
+        学习率预热
+        :param init_lr:
+        :param global_step:
+        :param warmup_steps:
+        :return:
+        """
+        # tf.cast:数据类型转换
         step = tf.cast(global_step + 1, dtype=tf.float32)
         return init_lr * warmup_steps ** 0.5 * tf.minimum(step * warmup_steps ** -1.5, step ** -0.5)

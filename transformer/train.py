@@ -36,7 +36,7 @@ class model_train():
         self.warmup_steps = 400
         self.d_ff = 1024
         self.lr = 0.00001
-        self.vocab_file = 'data/iwslt2016/segmented/bpe.vocab'
+        self.vocab_file = '../data/iwslt2016/segmented/bpe.vocab'
         self.model = Model_Transformer(self.batch_size, self.d_model, self.num_blocks, self.num_heads,
                                        self.sequence_length
                                        , self.dropout_rate, self.smoothing, self.warmup_steps, self.vocab_file,
@@ -86,14 +86,14 @@ class model_train():
         return total_num // self.batch_size + int(total_num % self.batch_size != 0)
 
     def train_(self, epochs):
-        train_batches, num_train_batches, num_train_samples = get_batch('data/iwslt2016/segmented/train.de.bpe',
-                                                                        'data/iwslt2016/segmented/train.en.bpe',
+        train_batches, num_train_batches, num_train_samples = get_batch('../data/iwslt2016/segmented/train.de.bpe',
+                                                                        '../data/iwslt2016/segmented/train.en.bpe',
                                                                         self.sequence_length,
                                                                         self.sequence_length,
                                                                         self.vocab_file, self.batch_size,
                                                                         shuffle=True)
-        eval_batches, num_eval_batches, num_eval_samples = get_batch('data/iwslt2016/segmented/eval.de.bpe',
-                                                                     'data/iwslt2016/segmented/eval.en.bpe',
+        eval_batches, num_eval_batches, num_eval_samples = get_batch('../data/iwslt2016/segmented/eval.de.bpe',
+                                                                     '../data/iwslt2016/segmented/eval.en.bpe',
                                                                      100000, 100000,
                                                                      self.vocab_file, self.batch_size,
                                                                      shuffle=False)
@@ -111,7 +111,7 @@ class model_train():
             if ckpt is None:
                 logging.info("Initializing from scratch")
                 sess.run(tf.global_variables_initializer())
-                save_variable_specs(os.path.join('data/log/1', "specs"))
+                save_variable_specs(os.path.join('../data/log/1', "specs"))
             else:
                 self.saver.restore(sess, ckpt)
 
@@ -135,17 +135,16 @@ class model_train():
 
                     logging.info("# get hypotheses")
                     hypotheses = get_hypotheses(num_eval_batches, num_eval_samples, sess, y_hat, self.model.index_char)
-                    print('====',hypotheses)
                     logging.info("# write results")
                     model_output = "iwslt2016_E%02dL%.2f" % (epoch, _loss)
                     if not os.path.exists('data/eval/1'):
-                        os.makedirs('data/eval/1')
-                    translation = os.path.join('data/eval/1', model_output)
+                        os.makedirs('../data/eval/1')
+                    translation = os.path.join('../data/eval/1', model_output)
                     with open(translation, 'w') as fout:
                         fout.write("\n".join(hypotheses))
 
                     logging.info("# calc bleu score and append it to translation")
-                    calc_bleu('data/iwslt2016/prepro/eval.en', translation)
+                    calc_bleu('../data/iwslt2016/prepro/eval.en', translation)
 
                     logging.info("# save models")
                     self.saver.save(sess, os.path.join(self.model_dir, 'transformer.dat'), global_step=_gs)
