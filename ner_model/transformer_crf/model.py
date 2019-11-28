@@ -29,26 +29,20 @@ class TransformerCRFModel(object):
         self.y = tf.placeholder(tf.int32, shape=[None, self.sequence_length])
         self.seq_lens = tf.placeholder(tf.int32, shape=[None])
         self.global_step = tf.train.create_global_step()
-        self.zero_pad = True
-        self.scale = True
         self.create_declare()
         self.create_embedding()
         self.build_model()
         self.create_loss()
 
-    def create_declare(self):
+    def create_embedding(self):
         with tf.variable_scope('embedding', reuse=None):
             lookup_table = tf.get_variable('lookup_table', dtype=tf.float32, shape=[self.vocab_size, self.embedding_size],
                                            initializer=tf.contrib.layers.xavier_initializer())
-            if self.zero_pad:
-                lookup_table = tf.concat((tf.zeros(shape=[1, self.embedding_size]), lookup_table[1:, :]), 0)
+            lookup_table = tf.concat((tf.zeros(shape=[1, self.embedding_size]), lookup_table[1:, :]), 0)
             outputs = tf.nn.embedding_lookup(lookup_table, self.x)
+            self.embedding = outputs * (self.num_units ** 0.5)
 
-            if self.scale:
-                # 归一化
-                self.embedding = outputs * (self.num_units ** 0.5)
-
-    def create_embedding(self):
+    def create_declare(self):
         self.w = tf.get_variable(name='w', dtype=tf.float32, shape=[self.num_units * 2, self.num_tags])
         self.b = tf.get_variable(name='b', dtype=tf.float32, shape=[self.num_tags])
 
