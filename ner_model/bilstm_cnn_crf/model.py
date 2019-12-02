@@ -7,7 +7,6 @@
 @Software: PyCharm
 """
 import tensorflow as tf
-import tensorflow.keras as kr
 
 
 class NerCore:
@@ -22,33 +21,66 @@ class NerCore:
         self.keep_prob = keep_prob
         self.num_layers = 1
         self.warmup_steps = 4000
-        # self.filters = [2, 3, 4, 5]
-        self.filter_num = 30
+        self.filters = [2, 3, 4]
+        self.pooling_size = 5
+        self.filter_size = 3
+        self.num_filters = 30
         self.half_kernel_size = 3
         self.clip = 5
         with tf.name_scope("ner_declare"):
             self.inputs = tf.placeholder(tf.int32, [None, self.io_sequence_size], name="char_inputs")
             self.targets = tf.placeholder(tf.int32, [None, self.io_sequence_size], name="targets")
             self.sequence_lengths = tf.placeholder(tf.int32, shape=[None], name="sequence_lengths")
-        self.create_embedding()
+        self.create_declare()
         self.build_model()
         self.create_loss()
 
-    def create_embedding(self):
-        with tf.variable_scope('embedding', reuse=None):
-            self.embedding_variable = tf.get_variable("embeddings",
-                                                      shape=[self.vocab_size, self.embedding_size],
-                                                      initializer=tf.contrib.layers.xavier_initializer())
-            self.embedded_layer = tf.nn.embedding_lookup(self.embedding_variable, self.inputs,
-                                                         name="embedding_layer")
+    def create_declare(self):
+        with tf.name_scope("ner_declare"):
+            self.weight_variable = tf.get_variable("weight_variable",
+                                                   shape=[self.hidden_size * 2, self.output_class_size],
+                                                   initializer=tf.contrib.layers.xavier_initializer())
+            self.bias_variable = tf.get_variable("bias_variable", shape=[self.output_class_size])
 
     def build_model(self):
+        with tf.device('/cpu:0'), tf.name_scope("word_embedding"):
+            # 加1是因为第0个字表示任意的word
+            self.W_word = tf.Variable(tf.random_uniform([self.vocab_size + 1, self.embedding_size], -1, 1),
+                                      name="W_word")
+            self.embedded_layer = tf.nn.embedding_lookup(self.W_word, self.inputs, name="embedded_words")
 
-        with tf.name_scope('CNN'):
-            # 使用CNN导致形变，提前padding 补0，注意keras中1维度padding补的是句子长度。不会补充词向量的长度
-            self.embedding = kr.layers.ZeroPadding1D(padding=self.half_kernel_size)(self.embedded_layer)
-            conv = tf.layers.conv1d(self.embedding, self.filter_num, self.half_kernel_size * 2 + 1, padding='valid')
-            self.conv = tf.reshape(conv, [-1, self.filter_num])
+        with tf.name_scope("conv_maxPool"):
+            """
+            filters的格式为：[filter_width, in_channels, out_channels]。
+            filter_width可以看作每次与value进行卷积的行数，
+            in_channels表示value一共有多少列（与value中的in_channels相对应）也就是词向量的维度
+            out_channels表示输出通道，可以理解为一共有多少个卷积核，即卷积核的数目
+            """
+            filter_shape = [self.filter_size, self.embedding_size, self.num_filters]
+            W_conv = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W_conv")
+            b_conv = tf.Variable(tf.constant(0.1, shape=[self.num_filters]), name="b_conv")
+            # 一维卷积（conv1d）
+            # self.embedded_layer要被卷积的矩阵[batch_size, self.io_sequence_size, self.embedding_size]
+            # stride：一个整数，表示步长，每次（向下）移动的距离
+            conv = tf.nn.conv1d(self.embedded_layer,
+                                W_conv,
+                                stride=1,
+                                padding="SAME",
+                                name="conv")
+            # conv: [batch, out_width, out_channels]
+            h = tf.nn.relu(tf.nn.bias_add(conv, b_conv, name="add_bias"))
+            # 补齐channels
+            h_expand = tf.expand_dims(h, -1)
+            pooled = tf.nn.max_pool(
+                h_expand,
+                ksize=[1, self.io_sequence_size, 1, 1],
+                strides=[1, 1, 1, 1],
+                padding='SAME',
+                name="pooled")
+            self.word_pool_flat = tf.reshape(pooled, [-1, self.io_sequence_size, self.num_filters],
+                                             name="word_pool_flat")
+            self.embedded_layer = tf.nn.dropout(self.word_pool_flat, self.keep_prob,
+                                                name="word_features_dropout")
 
         with tf.name_scope("ner_layer"):
             lstm_cell_fw = tf.nn.rnn_cell.DropoutWrapper(tf.nn.rnn_cell.LSTMCell(self.hidden_size),
@@ -66,13 +98,8 @@ class NerCore:
                 self.outputs = tf.concat(outputs, axis=-1)
                 self.outputs = tf.nn.dropout(self.outputs, self.keep_prob)
                 self.outputs = tf.reshape(self.outputs, [-1, 2 * self.hidden_size])
-
-                # 拼接bilstm和cnn的输出
-                self.outputs = tf.concat([self.conv, self.outputs], -1)
-
-                self.outputs = tf.layers.dense(self.outputs, self.output_class_size)
-                self.outputs = tf.contrib.layers.dropout(self.outputs, self.keep_prob)
-                self.logits = tf.reshape(self.outputs, [-1, self.io_sequence_size, self.output_class_size])
+                self.logits = tf.matmul(self.outputs, self.weight_variable) + self.bias_variable
+                self.logits = tf.reshape(self.logits, [-1, self.io_sequence_size, self.output_class_size])
 
     def create_loss(self):
         with tf.name_scope("ner_loss"):
@@ -81,6 +108,9 @@ class NerCore:
                                                                                        sequence_lengths=self.sequence_lengths)
             if self.is_training == True:
                 self.cost_func = tf.reduce_mean(-log_likelihood)
+                # losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.targets)
+                # mask = tf.sequence_mask(self.sequence_lengths)
+                # self.cost_func = tf.boolean_mask(losses, mask)
                 self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.cost_func)
 
     def decode(self, terms, taggs):

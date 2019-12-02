@@ -9,11 +9,11 @@
 import numpy as np
 import json
 import tensorflow as tf
-from .model import NerCore
+from bilstm_cnn_crf.model import NerCore
 
 
 class NerPredicter:
-    def __init__(self, vocab_file="vocab.json"):
+    def __init__(self, vocab_file="D:\mygit\\tf1.0\data\dictionary.json"):
         self.model_dir = "model/ner"
         self.vocab_file = vocab_file
         self.char_index = {' ': 0}

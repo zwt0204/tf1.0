@@ -317,6 +317,12 @@ class Model_Transformer():
         # train scheme
         y_ = self.label_smoothing(tf.one_hot(y, depth=self.vocab_size))
         ce = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
+
+        # 加入mask
+        mask = tf.sequence_mask(self.sequence_length)
+        # boolean_mask(a,b) 将使a (m维)矩阵仅保留与b中“True”元素同下标的部分
+        ce = tf.boolean_mask(ce, mask)
+
         nonpadding = tf.to_float(tf.not_equal(y, self.char_index["<pad>"]))  # 0: <pad>
         loss = tf.reduce_sum(ce * nonpadding) / (tf.reduce_sum(nonpadding) + 1e-7)
 
