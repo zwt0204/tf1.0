@@ -6,7 +6,7 @@
 @git   : https://github.com/phychaos/transformer_crf
 @Software: PyCharm
 """
-from model_utils import *
+from ner_model.transformer_crf.model_utils import *
 
 
 class TransformerCRFModel(object):
